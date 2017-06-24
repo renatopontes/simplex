@@ -56,6 +56,18 @@ struct Tabela_simplex {
         {}
 };
 
+class VectorHash {
+public:
+    size_t operator()(const vector<int>& v) const {
+        hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+            seed ^= hasher(i) + 0x9e3779b9 + (seed<<6) + (seed>>2);
+        }
+        return seed;
+    }
+};
+
 void ajustar_var_negativas(PPL &p);
 void ajustar_var_irrestritas(PPL &p);
 void ajustar_restricoes(PPL &p);
@@ -68,11 +80,11 @@ int coluna_pivot(Tabela_simplex& tab);
 
 
 bool deq(double a, double b) {
-    return fabs(a-b) < 1e-4;
+    return fabs(a-b) < 1e-7;
 }
 
 bool dgt(double a, double b) {
-    return a > b and fabs(a-b) > 1e-4;
+    return a > b and fabs(a-b) > 1e-7;
 }
 
 bool dge(double a, double b) {
@@ -203,16 +215,11 @@ void mostrar_tabela(Tabela_simplex& tab) {
     cout.precision(4);
     cout << fixed;
 
-    // string base = "x";
-    // string prefix(base.size() + 3, ' ');
-
-    // cout << prefix;
     for (size_t i = 0; i < tab.cz.size(); ++i)
         cout << tab.cz[i] << " ";
     cout << tab.z << endl;
 
     for (size_t i = 0; i < tab.BiA.size(); ++i) {
-        // cout << base << tab.base[i] << "  ";
         for (int j = 0; j < tab.BiA[0].size(); ++j)
             cout << tab.BiA[i][j] << " ";
         cout << tab.Bib[i] << '\n';
@@ -247,7 +254,10 @@ void mostrar_direcao(int idx, Tabela_simplex& tab) {
     for (int i = 0, o = 0; i < p.n; ++i, ++o) {
         int base_idx = tab.ibase[o];
         cout << " ";
-        if (p.mod[i] == 1) {
+        if (o == col_pivot) {
+            cout << 1.0;
+        }
+        else if (p.mod[i] == 1) {
             cout << (base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0);
         } else if (p.mod[i] == 2) {
             int base_idx2 = tab.ibase[o+1];
@@ -264,7 +274,7 @@ void mostrar_solucao(Tabela_simplex& tab) {
     if (tab.t == 0) return;
 
     PPL &p = tab.p;
-    vi base_otima = tab.base;
+    unordered_set<vi, VectorHash> vis;
     int idx = 1;
 
     cout << tab.t << endl;
@@ -276,8 +286,9 @@ void mostrar_solucao(Tabela_simplex& tab) {
         case 2: 
                 do {
                     mostrar_vertice(idx, tab);
+                    vis.insert(tab.base);
                     idx++;
-                } while (atualizar(tab) and tab.base != base_otima);
+                } while (atualizar(tab) and vis.find(tab.base) == vis.end());
                 cout << (p.tipo_original == "max" ? tab.z : -tab.z) << endl;
                 break;
         case 3: 
@@ -313,6 +324,8 @@ int coluna_pivot(Tabela_simplex& tab) {
         if (tab.ibase[i] != -1)
             continue;
 
+        if (dlt(tab.cz[i], 0.0)) return i;
+
         if (dlt(tab.cz[i], cz_min)) {
             cz_min = tab.cz[i];
             col_pivot = i;
@@ -327,9 +340,14 @@ int linha_pivot(int pivot, Tabela_simplex &tab) {
     int lin_pivot = -1;
 
     for (size_t i = 0; i < tab.BiA.size(); ++i) {
-        if (dgt(tab.BiA[i][pivot], 0) and dgt(razao, tab.Bib[i] / tab.BiA[i][pivot])) {
-            razao = tab.Bib[i] / tab.BiA[i][pivot];
-            lin_pivot = i;
+        if (dgt(tab.BiA[i][pivot], 0)) {
+            if (dgt(razao, tab.Bib[i] / tab.BiA[i][pivot])) {
+                razao = tab.Bib[i] / tab.BiA[i][pivot];
+                lin_pivot = i;
+            } else if (deq(razao, tab.Bib[i] / tab.BiA[i][pivot]) and tab.base[lin_pivot] < tab.base[i]) {
+                razao = tab.Bib[i] / tab.BiA[i][pivot];
+                lin_pivot = i;
+            }
         }
     }
 
@@ -362,8 +380,6 @@ bool atualizar(Tabela_simplex &tab) {
         }
     }
 
-    double elem_pivot = tab.BiA[lin_pivot][col_pivot];
-
     // muda a base
     tab.ibase[col_pivot] = lin_pivot;
     tab.ibase[tab.base[lin_pivot]] = -1;
@@ -373,6 +389,7 @@ bool atualizar(Tabela_simplex &tab) {
     tab.cB[lin_pivot] = p.c[col_pivot];
 
     // atualiza linha pivot
+    double elem_pivot = tab.BiA[lin_pivot][col_pivot];
     for (size_t i = 0; i < tab.BiA[0].size(); ++i)
         tab.BiA[lin_pivot][i] /= elem_pivot;
     tab.Bib[lin_pivot] /= elem_pivot;
@@ -511,9 +528,7 @@ int main() {
                 p.mod[i] = 2;
         }
 
-        // print_ppl(p);
         forma_padrao(p);
-        // print_ppl(p);
         if (!k) cout << "- - -\n";
         simplex(p);
         cout << "- - -\n";
