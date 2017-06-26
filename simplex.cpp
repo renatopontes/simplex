@@ -1,9 +1,10 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <queue>
 #include <string>
-#include <vector>
 #include <unordered_set>
+#include <vector>
 
 using namespace std;
 
@@ -12,6 +13,21 @@ typedef vector<int> vi;
 typedef vector<vd> vvd;
 typedef vector<char> vc;
 typedef vector<bool> vb;
+
+
+// Função hash para vectors, tirada do Stack Overflow
+// Necessária para criar um unordered_set de vectors
+class VectorHash {
+public:
+    size_t operator()(const vector<int>& v) const {
+        hash<int> hasher;
+        size_t seed = 0;
+        for (int i : v) {
+            seed ^= hasher(i) + 0x9e3779b9 + (seed<<6) + (seed>>2);
+        }
+        return seed;
+    }
+};
 
 struct PPL{
     int n;                   // número de variáveis originais
@@ -49,23 +65,16 @@ struct Tabela_simplex {
     int primeira_artificial; // índice da primeira variável artificial
     int t;                   // tipo da solução (1..5). 0 se o algoritmo não terminou
     short fase;              // diz se estamos na fase 1 ou fase 2
+    unordered_set<vi, VectorHash> otimos; // conjunto de vértices ótimos visitados
+    queue<vi> fila_otimos;   // fila de vértices ótimos a serem visitados
+    vvd solucao;             // vetor de soluções encontradas
+    vvd direcao;             // direções extremas para laterais ótimas ilimitadas
+    vi ivertice;             // diz o indíce do vértice associado a direção i
 
     Tabela_simplex(PPL& p) : 
         p(p), base(p.A.size()), ibase(p.A[0].size(), -1),
         Bib(p.b), cB(p.A.size()), t(0), fase(1), primeira_artificial(-1)
         {}
-};
-
-class VectorHash {
-public:
-    size_t operator()(const vector<int>& v) const {
-        hash<int> hasher;
-        size_t seed = 0;
-        for (int i : v) {
-            seed ^= hasher(i) + 0x9e3779b9 + (seed<<6) + (seed>>2);
-        }
-        return seed;
-    }
 };
 
 void ajustar_var_negativas(PPL &p);
@@ -77,7 +86,7 @@ void forma_padrao(PPL &p);
 void print_ppl(PPL &p, int k = 0);
 bool atualizar(Tabela_simplex &tab);
 int coluna_pivot(Tabela_simplex& tab);
-
+int linha_pivot(int pivot, Tabela_simplex &tab);
 
 bool deq(double a, double b) {
     return fabs(a-b) < 1e-7;
@@ -216,85 +225,38 @@ void mostrar_tabela(Tabela_simplex& tab) {
     cout << fixed;
 
     for (size_t i = 0; i < tab.cz.size(); ++i)
-        cout << tab.cz[i] << " ";
-    cout << tab.z << endl;
+        cout << ((fabs(tab.cz[i]) < 5e-7)? 0.0: tab.cz[i]) << " ";
+    cout << ((fabs(tab.z) < 5e-7)? 0.0: tab.z) << endl;
 
     for (size_t i = 0; i < tab.BiA.size(); ++i) {
         for (int j = 0; j < tab.BiA[0].size(); ++j)
-            cout << tab.BiA[i][j] << " ";
-        cout << tab.Bib[i] << '\n';
+            cout << ((fabs(tab.BiA[i][j]) < 5e-7)? 0.0: tab.BiA[i][j]) << " ";
+        cout << ((fabs(tab.Bib[i]) < 5e-7)? 0.0: tab.Bib[i]) << '\n';
     }
-}
-
-void mostrar_vertice(int idx, Tabela_simplex &tab) {
-    PPL& p = tab.p;
-
-    cout << "V" << idx;
-    for (int i = 0, o = 0; i < p.n; ++i, ++o) {
-        int base_idx = tab.ibase[o];
-        cout << " ";
-        if (p.mod[i] == 1) {
-            cout << (base_idx != -1 ? -tab.Bib[base_idx] : 0.0);
-        } else if (p.mod[i] == 2) {
-            int base_idx2 = tab.ibase[o+1];
-            cout << (base_idx != -1 ? tab.Bib[base_idx] : 0.0) - (base_idx2 != -1 ? -tab.Bib[base_idx2] : 0.0);
-            o++;
-        } else {
-            cout << (base_idx != -1 ? tab.Bib[base_idx] : 0.0);
-        }
-    }
-    cout << endl;
-}
-
-void mostrar_direcao(int idx, Tabela_simplex& tab) {
-    PPL& p = tab.p;
-    int col_pivot = coluna_pivot(tab);
-
-    cout << "D" << idx;
-    for (int i = 0, o = 0; i < p.n; ++i, ++o) {
-        int base_idx = tab.ibase[o];
-        cout << " ";
-        if (o == col_pivot) {
-            cout << 1.0;
-        }
-        else if (p.mod[i] == 1) {
-            cout << (base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0);
-        } else if (p.mod[i] == 2) {
-            int base_idx2 = tab.ibase[o+1];
-            cout << (base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0) - (base_idx2 != -1 ? tab.BiA[base_idx2][col_pivot] : 0.0);
-            o++;
-        } else {
-            cout << (base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0);
-        }
-    }
-    cout << endl;
 }
 
 void mostrar_solucao(Tabela_simplex& tab) {
     if (tab.t == 0) return;
 
     PPL &p = tab.p;
-    unordered_set<vi, VectorHash> vis;
-    int idx = 1;
 
     cout << tab.t << endl;
     switch(tab.t) {
-        case 1: 
-                mostrar_vertice(1, tab);
-                cout << (p.tipo_original == "max" ? tab.z : -tab.z) << endl;
-                break;
-        case 2: 
-                do {
-                    mostrar_vertice(idx, tab);
-                    vis.insert(tab.base);
-                    idx++;
-                } while (atualizar(tab) and vis.find(tab.base) == vis.end());
-                cout << (p.tipo_original == "max" ? tab.z : -tab.z) << endl;
-                break;
-        case 3: 
-                // mostrar_tabela(tab);
-                mostrar_vertice(idx, tab);
-                mostrar_direcao(idx, tab);
+        case 1:
+        case 2:
+        case 3:
+                for (size_t i = 0; i < tab.solucao.size(); ++i) {
+                    cout << "V" << i+1;
+                    for (size_t j = 0; j < tab.solucao[0].size(); ++j)
+                        cout << " " << ((fabs(tab.solucao[i][j]) < 5e-7)? 0.0: tab.solucao[i][j]);
+                    cout << '\n';
+                }
+                for (size_t i = 0; i < tab.direcao.size(); ++i) {
+                    cout << "D" << tab.ivertice[i]+1;
+                    for (size_t j = 0; j < tab.direcao[0].size(); ++j)
+                        cout << " " << ((fabs(tab.direcao[i][j]) < 5e-7)? 0.0: tab.direcao[i][j]);
+                    cout << '\n';
+                }
                 cout << (p.tipo_original == "max" ? tab.z : -tab.z) << endl;
                 break;
         case 4: 
@@ -317,22 +279,50 @@ bool base_sem_artificial(Tabela_simplex& tab) {
 }
 
 int coluna_pivot(Tabela_simplex& tab) {
-    double cz_min = INFINITY;
     int col_pivot = -1;
+    double cz_min = INFINITY;
 
-    for (int i = 0; i < tab.cz.size(); ++i) {
-        if (tab.ibase[i] != -1)
-            continue;
+    switch(tab.fase) {
+        case 1:
+            for (int i = 0; i < tab.cz.size(); ++i) {
+                if (tab.ibase[i] == -1 and dlt(tab.cz[i], cz_min)) {
+                    cz_min = tab.cz[i];
+                    col_pivot = i;
+                }
+            }
 
-        if (dlt(tab.cz[i], 0.0)) return i;
+            return col_pivot;
+        case 2:
+            // regra de Bland: escolhe a primeira não-básica
+            // com custo reduzido menor que zero
+            for (int i = 0; i < tab.cz.size(); ++i) {
+                if (tab.ibase[i] == -1 and dlt(tab.cz[i], 0.0))
+                    return i;
+                if (tab.ibase[i] == -1 and dlt(tab.cz[i], cz_min)) {
+                    cz_min = tab.cz[i];
+                    col_pivot = i;
+                }
+            }
 
-        if (dlt(tab.cz[i], cz_min)) {
-            cz_min = tab.cz[i];
-            col_pivot = i;
-        }
+            // se não existe não-básica com custo reduzido < 0
+            // tentar colocar na fila vértices ótimos (custo 0) vizinhos
+            vi base_viz(tab.base);
+            for (int i = 0; i < tab.cz.size(); ++i) {
+                if (tab.ibase[i] == -1 and deq(tab.cz[i], 0.0)) {
+                    int lin_pivot = linha_pivot(i, tab);
+                    if (lin_pivot == -1) continue;
+
+                    base_viz[lin_pivot] = i;
+                    if (tab.otimos.find(base_viz) == tab.otimos.end()) {
+                        tab.fila_otimos.push(base_viz);
+                        tab.otimos.insert(base_viz);
+                    }
+                    col_pivot = col_pivot == -1 ? i : col_pivot;
+                    base_viz[lin_pivot] = tab.base[lin_pivot];
+                }
+            }
+        return col_pivot;
     }
-
-    return col_pivot;
 }
 
 int linha_pivot(int pivot, Tabela_simplex &tab) {
@@ -345,7 +335,6 @@ int linha_pivot(int pivot, Tabela_simplex &tab) {
                 razao = tab.Bib[i] / tab.BiA[i][pivot];
                 lin_pivot = i;
             } else if (deq(razao, tab.Bib[i] / tab.BiA[i][pivot]) and tab.base[lin_pivot] < tab.base[i]) {
-                razao = tab.Bib[i] / tab.BiA[i][pivot];
                 lin_pivot = i;
             }
         }
@@ -354,42 +343,12 @@ int linha_pivot(int pivot, Tabela_simplex &tab) {
     return lin_pivot;
 }
 
-bool atualizar(Tabela_simplex &tab) {
-    PPL &p = tab.p;
-    int col_pivot = coluna_pivot(tab);
-    double cz_min = col_pivot != -1 ? tab.cz[col_pivot] : INFINITY;
-    int lin_pivot = col_pivot != -1 ? linha_pivot(col_pivot, tab) : -1;
+void pivotear(int lin_pivot, int col_pivot, Tabela_simplex& tab) {
+    double elem_pivot = tab.BiA[lin_pivot][col_pivot];
 
-    if (tab.fase == 1) {
-        if (deq(tab.z, 0) and base_sem_artificial(tab))
-            return false;
-        else if (tab.z != 0 and dge(cz_min, 0)) {
-            tab.t = 5;
-            return false;
-        }
-    } else {
-        if (dgt(cz_min, 0)) {
-            tab.t = 1;
-            return false;
-        } else if (deq(cz_min, 0) and tab.t == 0) {
-            tab.t = lin_pivot == -1 ? 3 : 2;
-            return false;
-        } else if (dlt(cz_min, 0) and lin_pivot == -1) {
-            tab.t = 4;
-            return false;
-        }
-    }
-
-    // muda a base
-    tab.ibase[col_pivot] = lin_pivot;
-    tab.ibase[tab.base[lin_pivot]] = -1;
-    tab.base[lin_pivot] = col_pivot;
-
-    // atualiza c_B
-    tab.cB[lin_pivot] = p.c[col_pivot];
+    tab.cB[lin_pivot] = tab.p.c[col_pivot];
 
     // atualiza linha pivot
-    double elem_pivot = tab.BiA[lin_pivot][col_pivot];
     for (size_t i = 0; i < tab.BiA[0].size(); ++i)
         tab.BiA[lin_pivot][i] /= elem_pivot;
     tab.Bib[lin_pivot] /= elem_pivot;
@@ -408,8 +367,114 @@ bool atualizar(Tabela_simplex &tab) {
     for (size_t i = 0; i < tab.BiA[0].size(); ++i)
         tab.cz[i] = custo_reduzido(i, tab);
     tab.z = -imagem(tab);
+}
 
-    return true;
+void montar_solucao(Tabela_simplex& tab, int col_pivot = -2) {
+    PPL& p = tab.p;
+    int sidx = tab.solucao.size();
+
+    cout.precision(4);
+    cout << fixed;
+
+    tab.otimos.insert(tab.base);
+
+    tab.solucao.push_back(vd());
+    for (int i = 0, o = 0; i < p.n; ++i, ++o) {
+        int base_idx = tab.ibase[o];
+        if (p.mod[i] == 1) {
+            tab.solucao[sidx].push_back(base_idx != -1 ? -tab.Bib[base_idx] : 0.0);
+        } else if (p.mod[i] == 2) {
+            int base_idx2 = tab.ibase[o+1];
+            tab.solucao[sidx].push_back((base_idx != -1 ? tab.Bib[base_idx] : 0.0) - (base_idx2 != -1 ? -tab.Bib[base_idx2] : 0.0));
+            o++;
+        } else {
+            tab.solucao[sidx].push_back(base_idx != -1 ? tab.Bib[base_idx] : 0.0);
+        }
+    }
+
+    if (col_pivot == -2) return;
+    if (col_pivot == -1 and tab.t != 3) {
+        tab.t = 2;
+        return;
+    }
+    
+    tab.t = 3;
+    int didx = tab.direcao.size();
+
+    tab.direcao.push_back(vd());
+    tab.ivertice.push_back(sidx);
+    for (int i = 0, o = 0; i < p.n; ++i, ++o) {
+        int base_idx = tab.ibase[o];
+        if (o == col_pivot)
+            tab.direcao[didx].push_back(1.0);
+        else if (p.mod[i] == 1) {
+            tab.direcao[didx].push_back(base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0);
+        } else if (p.mod[i] == 2) {
+            int base_idx2 = tab.ibase[o+1];
+            tab.direcao[didx].push_back((base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0) - (base_idx2 != -1 ? tab.BiA[base_idx2][col_pivot] : 0.0));
+            o++;
+        } else {
+            tab.direcao[didx].push_back(base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0);
+        }
+    }
+}
+
+bool atualizar(Tabela_simplex& tab) {
+    PPL &p = tab.p;
+    int col_pivot = coluna_pivot(tab);
+    int lin_pivot = col_pivot != -1 ? linha_pivot(col_pivot, tab) : -1;
+    double cz_min = col_pivot != -1 ? tab.cz[col_pivot] : INFINITY;
+
+    switch (tab.fase) {
+        case 1:
+            if (deq(tab.z, 0) and base_sem_artificial(tab)) {
+                return false;
+            }
+            else if (tab.z != 0 and dge(cz_min, 0)) {
+                tab.t = 5;
+                return false;
+            }
+            break;
+        case 2:
+            if (dgt(cz_min, 0) and tab.solucao.size() == 0) {
+                tab.t = 1;
+                montar_solucao(tab);
+                return false;
+            } else if (deq(cz_min, 0)) {
+                montar_solucao(tab, lin_pivot == -1 ? col_pivot : -1);
+            } else if (dlt(cz_min, 0) and lin_pivot == -1) {
+                tab.t = 4;
+                return false;
+            }
+            break;
+    }
+
+    if ((tab.t == 2 or tab.t == 3) and not tab.fila_otimos.empty()) {
+        for (int i = 0; i < tab.base.size(); ++i)
+            tab.ibase[tab.base[i]] = -1;
+
+        tab.base = tab.fila_otimos.front();
+        tab.fila_otimos.pop();
+
+        for (int i = 0; i < tab.base.size(); ++i)
+            tab.ibase[tab.base[i]] = i;
+
+        for (int i = 0; i < tab.base.size(); ++i)
+            pivotear(i, tab.base[i], tab);
+
+        return true;
+    } else if (not tab.t) {
+        // muda a base
+        tab.ibase[col_pivot] = lin_pivot;
+        tab.ibase[tab.base[lin_pivot]] = -1;
+        tab.base[lin_pivot] = col_pivot;
+
+        pivotear(lin_pivot, col_pivot, tab);
+
+        return true;
+    } else {
+        return false;
+    }
 }
 
 void adicionar_var_artificiais(Tabela_simplex &tab) {
@@ -479,9 +544,7 @@ void fase2(Tabela_simplex &tab) {
     inicializar_tabela(tab);
     mostrar_tabela(tab);
 
-    while (not tab.t) {
-        atualizar(tab);
-    }
+    while (atualizar(tab));
 }
 
 void simplex(PPL &p) {
