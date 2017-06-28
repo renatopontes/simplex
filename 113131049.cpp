@@ -1,21 +1,25 @@
 // ****************************************************************************
-// *                      Autor: Renato Pontes Rodrigues                      *
-// *                              DRE: 113131049                              *
 // *                                                                          *
 // *                 Método Simplex pelo método das duas fases                *
 // *                                                                          *
-// *                Compilar com: g++ 113131049.cpp --std=c++11               *
+// *  Autor: Renato Pontes Rodrigues                                          *
+// *  DRE: 113131049                                                          *
 // *                                                                          *
-// *    Fase I usa custo reduzido mais negativo para escolher coluna pivot    *
-// *   Fase II usa regra de Bland para evitar loops em vértices degenerados   *
+// *  Compilar com: g++ 113131049.cpp --std=c++11                             *
+// *                                                                          *
+// *  Fase I usa custo reduzido mais negativo para escolher coluna pivot      *
+// *  Fase II usa regra de Bland porque ouvi dizer que evita loops            *
+// *                                                                          *
+// *  Direções extremas impressas considerando variáveis de folga             *
+// *  Vértices impressos somente em função das variáveis originais            *
+// *                                                                          *
 // ****************************************************************************
 
-#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <queue>
 #include <string>
-#include <unordered_set>
+#include <unordered_set> // C++11
 #include <vector>
 
 using namespace std;
@@ -112,10 +116,9 @@ void remover_var_artificiais(Tabela_simplex& tab);
 bool atualizar(Tabela_simplex& tab);
 int coluna_pivot(Tabela_simplex& tab);
 int linha_pivot(int pivot, Tabela_simplex &tab);
-bool base_sem_artificial(Tabela_simplex& tab);
 double custo_reduzido(int j, Tabela_simplex &tab);
 double imagem(Tabela_simplex &tab);
-void pivotear(int lin_pivot, int col_pivot, Tabela_simplex& tab);
+void ajustar_BiA(int lin_pivot, int col_pivot, Tabela_simplex& tab);
 void montar_solucao(Tabela_simplex& tab, int col_pivot = -2);
 void mostrar_tabela(Tabela_simplex& tab);
 void mostrar_solucao(Tabela_simplex& tab);
@@ -325,18 +328,6 @@ void mostrar_solucao(Tabela_simplex& tab) {
     }
 }
 
-// retorna true se a base não contém variáveis artificiais
-bool base_sem_artificial(Tabela_simplex& tab) {
-    if (tab.primeira_artificial == -1)
-        return true;
-
-    for (int i = tab.primeira_artificial; i < tab.BiA[0].size(); ++i)
-        if (tab.ibase[i] != -1)
-            return false;
-
-    return true;
-}
-
 // retorna a coluna pivot. Se a tabela é ótima, mas não única, bases ótimas
 // vizinhas são adicionadas a fila
 int coluna_pivot(Tabela_simplex& tab) {
@@ -345,6 +336,7 @@ int coluna_pivot(Tabela_simplex& tab) {
 
     switch(tab.fase) {
         case 1:
+        	// custo mais negativo
             for (int i = 0; i < tab.cz.size(); ++i) {
                 if (tab.ibase[i] == -1 and dlt(tab.cz[i], cz_min)) {
                     cz_min = tab.cz[i];
@@ -352,7 +344,7 @@ int coluna_pivot(Tabela_simplex& tab) {
                 }
             }
 
-            return col_pivot;
+            break;
         case 2:
             // regra de Bland: escolhe a primeira não-básica
             // com custo reduzido menor que zero
@@ -365,6 +357,9 @@ int coluna_pivot(Tabela_simplex& tab) {
                 }
             }
 
+            // se todos os ci-zi são > 0, não existem soluções alternativas
+            if (dgt(cz_min,0)) return col_pivot;
+
             // se não existe não-básica com custo reduzido < 0
             // tentar colocar na fila vértices ótimos (custo 0) vizinhos
             vi base_viz(tab.base);
@@ -374,6 +369,8 @@ int coluna_pivot(Tabela_simplex& tab) {
                     if (lin_pivot == -1) continue;
 
                     base_viz[lin_pivot] = i;
+                    // se o vértice ótimo vizinho não está na fila,
+                    // adicionar à fila
                     if (tab.otimos.find(base_viz) == tab.otimos.end()) {
                         tab.fila_otimos.push(base_viz);
                         tab.otimos.insert(base_viz);
@@ -382,8 +379,9 @@ int coluna_pivot(Tabela_simplex& tab) {
                     base_viz[lin_pivot] = tab.base[lin_pivot];
                 }
             }
-        return col_pivot;
     }
+
+    return col_pivot;
 }
 
 // retorna o índice da linha pivot. -1 se o teste da razão mínima falhar
@@ -408,7 +406,7 @@ int linha_pivot(int pivot, Tabela_simplex &tab) {
 
 // divide a linha lin_pivot pelo elemento pivot
 // zera as outras linhas na coluna col_pivot
-void pivotear(int lin_pivot, int col_pivot, Tabela_simplex& tab) {
+void ajustar_BiA(int lin_pivot, int col_pivot, Tabela_simplex& tab) {
     double elem_pivot = tab.BiA[lin_pivot][col_pivot];
 
     tab.cB[lin_pivot] = tab.p.c[col_pivot];
@@ -450,9 +448,11 @@ void montar_solucao(Tabela_simplex& tab, int col_pivot) {
     tab.solucao.push_back(vd());
     for (int i = 0, o = 0; i < p.n; ++i, ++o) {
         int base_idx = tab.ibase[o];
+        // se a variável foi substituída por -x
         if (p.mod[i] == 1) {
             tab.solucao[sidx].push_back(
             	base_idx != -1 ? -tab.Bib[base_idx] : 0.0);
+        // se a variável foi substituída por x'-x''
         } else if (p.mod[i] == 2) {
             int base_idx2 = tab.ibase[o+1];
             tab.solucao[sidx].push_back(
@@ -460,6 +460,7 @@ void montar_solucao(Tabela_simplex& tab, int col_pivot) {
             	(base_idx2 != -1 ? -tab.Bib[base_idx2] : 0.0)
             );
             o++;
+        // se a variável não sofreu modificação
         } else {
             tab.solucao[sidx].push_back(
             	base_idx != -1 ? tab.Bib[base_idx] : 0.0);
@@ -467,30 +468,28 @@ void montar_solucao(Tabela_simplex& tab, int col_pivot) {
     }
 
     if (col_pivot == -2) return;
+
+    // Se é solução múltipla e não encontrou aresta infinita, tipo 2
     if (col_pivot == -1 and tab.t != 3) {
         tab.t = 2;
         return;
     }
     
+    // se encontrou uma aresta infinita, tipo 3
     tab.t = 3;
     int didx = tab.direcao.size();
 
+    // cria direção extrema a partir do vértice
     tab.direcao.push_back(vd());
     tab.ivertice.push_back(sidx);
-    for (int i = 0, o = 0; i < p.n; ++i, ++o) {
-        int base_idx = tab.ibase[o];
-        if (o == col_pivot)
+    for (int i = 0; i < tab.BiA[0].size(); ++i) {
+        int base_idx = tab.ibase[i];
+
+        // se for a variável que falhou no teste da razão mínima => 1.0
+        if (i == col_pivot)
             tab.direcao[didx].push_back(1.0);
-        else if (p.mod[i] == 1) {
-            tab.direcao[didx].push_back(
-            	base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0);
-        } else if (p.mod[i] == 2) {
-            int base_idx2 = tab.ibase[o+1];
-            tab.direcao[didx].push_back(
-            	(base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0) -
-            	(base_idx2 != -1 ? tab.BiA[base_idx2][col_pivot] : 0.0));
-            o++;
-        } else {
+        // se não, coloca -BiA[j][col_pivot] pra xj básica, ou 0 se não básica.
+        else {
             tab.direcao[didx].push_back(
             	base_idx != -1 ? -tab.BiA[base_idx][col_pivot] : 0.0);
         }
@@ -507,21 +506,24 @@ bool atualizar(Tabela_simplex& tab) {
 
     switch (tab.fase) {
         case 1:
-            if (deq(tab.z, 0) and base_sem_artificial(tab)) { // !!!!!!!!!!!!
+            if (deq(tab.z, 0)) // Se z == 0, acabou a primeira fase
                 return false;
-            }
-            else if (tab.z != 0 and dge(cz_min, 0)) {
+            // se z é diferente de 0 e a tabela é ótima, solução impossível
+            else if (tab.z != 0 and dge(cz_min, 0.0)) {
                 tab.t = 5;
                 return false;
             }
             break;
         case 2:
+        	// solução única, ci - zi > 0, para todo i
             if (dgt(cz_min, 0) and tab.solucao.size() == 0) {
                 tab.t = 1;
                 montar_solucao(tab);
                 return false;
+            // múltiplas soluções, ci - zi == 0, para algum i.
             } else if (deq(cz_min, 0)) {
                 montar_solucao(tab, lin_pivot == -1 ? col_pivot : -1);
+            // solução ilimitada, ci - zi < 0 com falha no teste da razão
             } else if (dlt(cz_min, 0) and lin_pivot == -1) {
                 tab.t = 4;
                 return false;
@@ -529,6 +531,7 @@ bool atualizar(Tabela_simplex& tab) {
             break;
     }
 
+    // no caso de múltiplas soluções, verificar bases na fila
     if ((tab.t == 2 or tab.t == 3) and not tab.fila_otimos.empty()) {
         for (int i = 0; i < tab.base.size(); ++i)
             tab.ibase[tab.base[i]] = -1;
@@ -540,18 +543,21 @@ bool atualizar(Tabela_simplex& tab) {
             tab.ibase[tab.base[i]] = i;
 
         for (int i = 0; i < tab.base.size(); ++i)
-            pivotear(i, tab.base[i], tab);
+            ajustar_BiA(i, tab.base[i], tab);
 
         return true;
+    // se não, a tabela não é ótima, e prosseguimos com o simplex normalmente
     } else if (not tab.t) {
         // muda a base
         tab.ibase[col_pivot] = lin_pivot;
         tab.ibase[tab.base[lin_pivot]] = -1;
         tab.base[lin_pivot] = col_pivot;
 
-        pivotear(lin_pivot, col_pivot, tab);
+        ajustar_BiA(lin_pivot, col_pivot, tab);
 
         return true;
+    // se a tabela é ótima, mas a fila de vértices ótimos é vazia
+    // todos os vértices ótimos foram encontrados
     } else {
         return false;
     }
@@ -654,6 +660,9 @@ void simplex(PPL &p) {
 int main() {
     int np;
     int indice = 1;
+
+    // não sincroniza cin e cout (C++) com stdin e stdout (C)
+    ios::sync_with_stdio(false);
 
     cin >> np;
 
