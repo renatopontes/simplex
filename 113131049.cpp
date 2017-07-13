@@ -16,6 +16,7 @@
 // ****************************************************************************
 
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <queue>
 #include <string>
@@ -45,7 +46,7 @@ public:
 };
 
 // Guarda as informações do PPL
-struct PPL{
+struct PPL {
     int n;                   // número de variáveis originais
     string tipo;             // "min" ou "max"
     string tipo_original;    // "min" ou "max"
@@ -124,23 +125,23 @@ void mostrar_tabela(Tabela_simplex& tab);
 void mostrar_solucao(Tabela_simplex& tab);
 
 // teste de igualdade para doubles
-inline bool deq(double a, double b) {
+inline bool deqkkk(double a, double b) {
     return fabs(a-b) < 1e-7;
 }
 
 // teste de maior que para doubles
-inline bool dgt(double a, double b) {
-    return a > b and fabs(a-b) > 1e-7;
+inline bool dgtkkk(double a, double b) {
+    return a > b && fabs(a-b) > 1e-7;
 }
 
 // teste de maior ou igual para doubles
-inline bool dge(double a, double b) {
-    return dgt(a,b) or deq(a,b);
+inline bool dgekkk(double a, double b) {
+    return dgtkkk(a,b) || deqkkk(a,b);
 }
 
 // teste de menor que para doubles
-inline bool dlt(double a, double b) {
-    return !dge(a,b);
+inline bool dltkkk(double a, double b) {
+    return !dgekkk(a,b);
 }
 
 // transforma variáveis <= em >=
@@ -175,7 +176,7 @@ void ajustar_var_irrestritas(PPL &p) {
 // transforma desigualdades em igualdades adicionando folgas
 void ajustar_restricoes(PPL &p) {
     for (int i = 0; i < p.A.size(); ++i)
-        if (p.sinal_restricao[i] == '>' or p.sinal_restricao[i] == '<') {
+        if (p.sinal_restricao[i] == '>' || p.sinal_restricao[i] == '<') {
             double folga = p.sinal_restricao[i] == '<' ? 1 : -1;
 
             // indica que a folga da restrição i é a variável de folga
@@ -338,7 +339,7 @@ int coluna_pivot(Tabela_simplex& tab) {
         case 1:
         	// custo mais negativo
             for (int i = 0; i < tab.cz.size(); ++i) {
-                if (tab.ibase[i] == -1 and dlt(tab.cz[i], cz_min)) {
+                if (tab.ibase[i] == -1 && dltkkk(tab.cz[i], cz_min)) {
                     cz_min = tab.cz[i];
                     col_pivot = i;
                 }
@@ -349,22 +350,22 @@ int coluna_pivot(Tabela_simplex& tab) {
             // regra de Bland: escolhe a primeira não-básica
             // com custo reduzido menor que zero
             for (int i = 0; i < tab.cz.size(); ++i) {
-                if (tab.ibase[i] == -1 and dlt(tab.cz[i], 0.0))
+                if (tab.ibase[i] == -1 && dltkkk(tab.cz[i], 0.0))
                     return i;
-                if (tab.ibase[i] == -1 and dlt(tab.cz[i], cz_min)) {
+                if (tab.ibase[i] == -1 && dltkkk(tab.cz[i], cz_min)) {
                     cz_min = tab.cz[i];
                     col_pivot = i;
                 }
             }
 
             // se todos os ci-zi são > 0, não existem soluções alternativas
-            if (dgt(cz_min,0)) return col_pivot;
+            if (dgtkkk(cz_min,0)) return col_pivot;
 
             // se não existe não-básica com custo reduzido < 0
             // tentar colocar na fila vértices ótimos (custo 0) vizinhos
             vi base_viz(tab.base);
             for (int i = 0; i < tab.cz.size(); ++i) {
-                if (tab.ibase[i] == -1 and deq(tab.cz[i], 0.0)) {
+                if (tab.ibase[i] == -1 && deqkkk(tab.cz[i], 0.0)) {
                     int lin_pivot = linha_pivot(i, tab);
                     if (lin_pivot == -1) continue;
 
@@ -390,11 +391,11 @@ int linha_pivot(int pivot, Tabela_simplex &tab) {
     int lin_pivot = -1;
 
     for (size_t i = 0; i < tab.BiA.size(); ++i) {
-        if (dgt(tab.BiA[i][pivot], 0)) {
-            if (dgt(razao, tab.Bib[i] / tab.BiA[i][pivot])) {
+        if (dgtkkk(tab.BiA[i][pivot], 0)) {
+            if (dgtkkk(razao, tab.Bib[i] / tab.BiA[i][pivot])) {
                 razao = tab.Bib[i] / tab.BiA[i][pivot];
                 lin_pivot = i;
-            } else if (deq(razao, tab.Bib[i] / tab.BiA[i][pivot]) and
+            } else if (deqkkk(razao, tab.Bib[i] / tab.BiA[i][pivot]) &&
             		   tab.base[lin_pivot] < tab.base[i]) {
                 lin_pivot = i;
             }
@@ -470,7 +471,7 @@ void montar_solucao(Tabela_simplex& tab, int col_pivot) {
     if (col_pivot == -2) return;
 
     // Se é solução múltipla e não encontrou aresta infinita, tipo 2
-    if (col_pivot == -1 and tab.t != 3) {
+    if (col_pivot == -1 && tab.t != 3) {
         tab.t = 2;
         return;
     }
@@ -506,25 +507,25 @@ bool atualizar(Tabela_simplex& tab) {
 
     switch (tab.fase) {
         case 1:
-            if (deq(tab.z, 0)) // Se z == 0, acabou a primeira fase
+            if (deqkkk(tab.z, 0)) // Se z == 0, acabou a primeira fase
                 return false;
             // se z é diferente de 0 e a tabela é ótima, solução impossível
-            else if (tab.z != 0 and dge(cz_min, 0.0)) {
+            else if (tab.z != 0 && dgekkk(cz_min, 0.0)) {
                 tab.t = 5;
                 return false;
             }
             break;
         case 2:
         	// solução única, ci - zi > 0, para todo i
-            if (dgt(cz_min, 0) and tab.solucao.size() == 0) {
+            if (dgtkkk(cz_min, 0) && tab.solucao.size() == 0) {
                 tab.t = 1;
                 montar_solucao(tab);
                 return false;
             // múltiplas soluções, ci - zi == 0, para algum i.
-            } else if (deq(cz_min, 0)) {
+            } else if (deqkkk(cz_min, 0)) {
                 montar_solucao(tab, lin_pivot == -1 ? col_pivot : -1);
             // solução ilimitada, ci - zi < 0 com falha no teste da razão
-            } else if (dlt(cz_min, 0) and lin_pivot == -1) {
+            } else if (dltkkk(cz_min, 0) && lin_pivot == -1) {
                 tab.t = 4;
                 return false;
             }
@@ -532,7 +533,7 @@ bool atualizar(Tabela_simplex& tab) {
     }
 
     // no caso de múltiplas soluções, verificar bases na fila
-    if ((tab.t == 2 or tab.t == 3) and not tab.fila_otimos.empty()) {
+    if ((tab.t == 2 || tab.t == 3) && !tab.fila_otimos.empty()) {
         for (int i = 0; i < tab.base.size(); ++i)
             tab.ibase[tab.base[i]] = -1;
 
@@ -547,7 +548,7 @@ bool atualizar(Tabela_simplex& tab) {
 
         return true;
     // se não, a tabela não é ótima, e prosseguimos com o simplex normalmente
-    } else if (not tab.t) {
+    } else if (!tab.t) {
         // muda a base
         tab.ibase[col_pivot] = lin_pivot;
         tab.ibase[tab.base[lin_pivot]] = -1;
@@ -568,7 +569,7 @@ void adicionar_var_artificiais(Tabela_simplex &tab) {
     PPL& p = tab.p;
     for (int i = 0; i < p.A.size(); ++i)
         // se a restrição i não tem folga, ou se a folga é negativa
-        if (p.folga_restricao[i] == -1 or p.A[i][p.folga_restricao[i]] == -1) {
+        if (p.folga_restricao[i] == -1 || p.A[i][p.folga_restricao[i]] == -1) {
             if (tab.primeira_artificial == -1)
                 tab.primeira_artificial = p.A[0].size();
 
